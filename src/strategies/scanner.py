@@ -21,13 +21,21 @@ class MarketScanner:
         self.market_trend = 'neutral'
     
     def get_us_stock_symbols(self):
+        """获取美股交易对（精确匹配）"""
         all_symbols = self.data_manager.get_all_symbols()
         us_symbols = []
+        
         for symbol in all_symbols:
-            for keyword in US_STOCK_KEYWORDS:
-                if keyword in symbol and 'USDT' in symbol:
-                    us_symbols.append(symbol)
-                    break
+            if '-USDT-SWAP' not in symbol:
+                continue
+            
+            # 提取股票代码
+            stock_code = symbol.replace('-USDT-SWAP', '')
+            
+            # 精确匹配
+            if stock_code in US_STOCK_KEYWORDS:
+                us_symbols.append(symbol)
+        
         return sorted(list(set(us_symbols)))
     
     def get_market_trend(self):
@@ -61,7 +69,7 @@ class MarketScanner:
         indicators = self.signal_generator.calculate_indicators(data['prices'], data['volumes'])
         if not indicators:
             return None
-        signal, score, reasons = self.signal_generator.generate_signal(indicators, self.market_trend)
+        signal, score, reasons, strategy_type = self.signal_generator.generate_signal(indicators, self.market_trend)
         
         if signal in ['buy', 'short'] and score >= MIN_SCORE:
             atr = indicators['atr']
@@ -74,6 +82,7 @@ class MarketScanner:
                     'score': score,
                     'signal': 'buy',
                     'reasons': reasons,
+                    'strategy_type': strategy_type,
                     'stop_loss': round(current - (atr * 2), 4),
                     'take_profit': round(current + (atr * 4), 4),
                     'risk_reward': '1:2'
@@ -86,6 +95,7 @@ class MarketScanner:
                     'score': score,
                     'signal': 'short',
                     'reasons': reasons,
+                    'strategy_type': strategy_type,
                     'stop_loss': round(current + (atr * 2), 4),
                     'take_profit': round(current - (atr * 4), 4),
                     'risk_reward': '1:2'
@@ -156,7 +166,7 @@ class MarketScanner:
             print('-' * 120)
             for i, r in enumerate(buy_signals[:top_n], 1):
                 reasons_str = ', '.join(r.get('reasons', [])[:2])
-                row = '{:<3} {:<22}  {:<8.1f} {:<6} {:<20}   {:<8}'.format(
+                row = '{:<3} {:<22} ${:<11,.2f} {:<8.1f} {:<6} {:<20} ${:<11,.2f} ${:<11,.2f} {:<8}'.format(
                     i, r['symbol'], r['price'], r['rsi'], r['score'], reasons_str,
                     r['stop_loss'], r['take_profit'], r['risk_reward'])
                 print(row)
@@ -174,7 +184,7 @@ class MarketScanner:
             print('-' * 120)
             for i, r in enumerate(short_signals[:top_n], 1):
                 reasons_str = ', '.join(r.get('reasons', [])[:3])
-                row = '{:<3} {:<22}  {:<8.1f} {:<6} {:<25}   {:<8}'.format(
+                row = '{:<3} {:<22} ${:<11,.2f} {:<8.1f} {:<6} {:<25} ${:<11,.2f} ${:<11,.2f} {:<8}'.format(
                     i, r['symbol'], r['price'], r['rsi'], r['score'], reasons_str,
                     r['stop_loss'], r['take_profit'], r['risk_reward'])
                 print(row)
@@ -182,14 +192,8 @@ class MarketScanner:
         print('')
         print('=' * 120)
         print('策略说明:')
-        print('  做多: 趋势向上(价格>MA50) + RSI适中 + 成交量放大')
-        print('  做空: 欧奈尔卖空信号（顶部形态/突破失败/量价背离/RSI反转/均线死叉）')
-        print('  大盘过滤: 看多只做多，看空只做空')
+        print('  做多: 趋势跟随（大盘bullish）或 均值回归（RSI<30超卖反弹）')
+        print('  做空: 欧奈尔卖空信号（顶部形态/突破失败/量价背离）')
+        print('  大盘过滤: bullish只做多，bearish只做空，neutral都可')
         print('  止损: ATR x 2 | 止盈: ATR x 4 | R:R = 1:2')
         print('=' * 120)
-
-
-if __name__ == '__main__':
-    scanner = MarketScanner()
-    results = scanner.scan()
-    scanner.display(results)
